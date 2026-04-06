@@ -203,12 +203,39 @@ export class SpineResponse extends Schema.Class<SpineResponse>('SpineResponse')(
 // Error response (non-2xx)
 // ---------------------------------------------------------------------------
 
+/** A single field-level validation error from the Prodigi API. */
+export class ValidationDetail extends Schema.Class<ValidationDetail>(
+	'ValidationDetail'
+)(
+	{
+		key: Schema.String,
+		message: Schema.String,
+		field: Schema.optionalKey(Schema.String)
+	},
+	{
+		description:
+			'A field-level validation failure returned by the Prodigi API.'
+	}
+) {}
+
+/** Structured error data returned in a non-2xx Prodigi API response. */
+export class ErrorData extends Schema.Class<ErrorData>('ErrorData')(
+	{
+		errors: Schema.optionalKey(Schema.Array(ValidationDetail)),
+		traceId: Schema.optionalKey(Schema.String)
+	},
+	{
+		description:
+			'Validation errors and trace identifier from a failed Prodigi API call.'
+	}
+) {}
+
 /** Base error response shape from authenticated Prodigi API requests. */
 export class ErrorResponse extends Schema.Class<ErrorResponse>('ErrorResponse')(
 	{
 		statusText: Schema.String,
 		statusCode: Schema.Number,
-		data: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
+		data: Schema.optionalKey(ErrorData),
 		traceParent: Schema.optionalKey(Schema.String)
 	},
 	{

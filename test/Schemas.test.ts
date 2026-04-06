@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
 import * as Arr from 'effect/Array';
+import * as DateTime from 'effect/DateTime';
 import * as Option from 'effect/Option';
 import * as Schema from 'effect/Schema';
 
@@ -214,9 +215,12 @@ describe('Domain Schemas', () => {
 				onNonEmpty: (shipments) => {
 					const shipment = Arr.headNonEmpty(shipments);
 					expect(shipment.status).toBe('Shipped');
+					expect(Option.isSome(shipment.dispatchDate)).toBe(true);
 					expect(
-						Option.getOrElse(shipment.dispatchDate, () => 'MISSING')
-					).toBe('2025-01-05');
+						Option.map(shipment.dispatchDate, (d) =>
+							DateTime.formatIso(d)
+						)
+					).toStrictEqual(Option.some('2025-01-05T00:00:00.000Z'));
 					expect(
 						Option.flatMap(shipment.tracking, (t) => t.number)
 					).toStrictEqual(Option.some('TRACK123'));

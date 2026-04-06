@@ -3,6 +3,7 @@ import { describe, expect, it } from '@effect/vitest';
 import { Effect, Layer, pipe } from 'effect';
 import * as Arr from 'effect/Array';
 import * as Option from 'effect/Option';
+import * as Schema from 'effect/Schema';
 import { HttpClient, HttpClientResponse } from 'effect/unstable/http';
 
 import { ProdigiClient, ProdigiConfig, ProdigiError } from 'effect-prodigi';
@@ -105,9 +106,11 @@ interface MockRoute {
 	readonly body: unknown;
 }
 
+const encodeJson = Schema.encodeSync(Schema.UnknownFromJsonString);
+
 /** Build a web `Response` with a JSON body. */
 const jsonResponse = (body: unknown, status: number): Response =>
-	new Response(JSON.stringify(body), {
+	new Response(encodeJson(body), {
 		status,
 		headers: { 'content-type': 'application/json' }
 	});
@@ -247,6 +250,60 @@ describe('ProdigiClient', () => {
 				)
 			)
 		);
+
+		it.effect('passes query parameters to the URL', () =>
+			Effect.gen(function* () {
+				const client = yield* ProdigiClient.Service;
+				const resp = yield* client.getOrders({
+					top: 5,
+					skip: 10,
+					status: 'Complete',
+					orderIds: ['ord_1', 'ord_2']
+				});
+				expect(resp.outcome).toBe('Ok');
+			}).pipe(
+				Effect.provide(
+					ProdigiClient.layer.pipe(
+						Layer.provide(TestConfig),
+						Layer.provide(
+							Layer.succeed(
+								HttpClient.HttpClient,
+								HttpClient.make((request, url) => {
+									// Verify query params are present
+									expect(url.searchParams.get('top')).toBe(
+										'5'
+									);
+									expect(url.searchParams.get('skip')).toBe(
+										'10'
+									);
+									expect(url.searchParams.get('status')).toBe(
+										'Complete'
+									);
+									expect(
+										url.searchParams.get('orderIds')
+									).toBe('ord_1,ord_2');
+
+									return Effect.succeed(
+										HttpClientResponse.fromWeb(
+											request,
+											jsonResponse(
+												{
+													outcome: 'Ok',
+													orders: [],
+													hasMore: false,
+													nextUrl: null
+												},
+												200
+											)
+										)
+									);
+								})
+							)
+						)
+					)
+				)
+			)
+		);
 	});
 
 	// -- createOrder --------------------------------------------------------
@@ -286,7 +343,7 @@ describe('ProdigiClient', () => {
 				Effect.provide(
 					makeTestLayer({
 						method: 'POST',
-						pathIncludes: '/Orders',
+						pathIncludes: '/orders',
 						status: 200,
 						body: {
 							outcome: 'Created',
@@ -333,7 +390,7 @@ describe('ProdigiClient', () => {
 				Effect.provide(
 					makeTestLayer({
 						method: 'POST',
-						pathIncludes: '/Orders',
+						pathIncludes: '/orders',
 						status: 200,
 						body: {
 							outcome: 'CreatedWithIssues',

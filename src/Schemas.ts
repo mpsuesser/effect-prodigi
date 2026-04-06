@@ -154,7 +154,13 @@ export class Address extends Schema.Class<Address>('Address')(
 	{ description: 'Postal address for order recipients.' }
 ) {}
 
-/** Recipient name, contact details, and address. */
+/**
+ * Recipient name, contact details, and address (response shape).
+ *
+ * Nullable fields decode to `Option`. For the request-side counterpart
+ * used when creating/updating orders, see `RecipientInput` in
+ * `Requests.ts`.
+ */
 export class Recipient extends Schema.Class<Recipient>('Recipient')(
 	{
 		name: Schema.String,
@@ -392,7 +398,7 @@ export class Shipment extends Schema.Class<Shipment>('Shipment')(
 		id: Schema.String,
 		status: ShipmentStatus,
 		carrier: Carrier,
-		dispatchDate: Schema.OptionFromNullOr(Schema.String),
+		dispatchDate: Schema.OptionFromNullOr(Schema.DateTimeUtcFromString),
 		items: Schema.Array(ShipmentItem),
 		tracking: Schema.OptionFromNullOr(Tracking),
 		fulfillmentLocation: FulfillmentLocation
@@ -411,8 +417,8 @@ export class Shipment extends Schema.Class<Shipment>('Shipment')(
 export class Order extends Schema.Class<Order>('Order')(
 	{
 		id: Schema.String,
-		created: Schema.String,
-		lastUpdated: Schema.String,
+		created: Schema.DateTimeUtcFromString,
+		lastUpdated: Schema.DateTimeUtcFromString,
 		callbackUrl: Schema.OptionFromNullOr(Schema.String),
 		merchantReference: Schema.OptionFromNullOr(Schema.String),
 		shippingMethod: ShippingMethod,
@@ -594,7 +600,7 @@ export class CallbackEvent extends Schema.Class<CallbackEvent>('CallbackEvent')(
 		type: Schema.String,
 		source: Schema.String,
 		id: Schema.String,
-		time: Schema.String,
+		time: Schema.DateTimeUtcFromString,
 		datacontenttype: Schema.String,
 		data: Schema.Record(Schema.String, Schema.Unknown),
 		subject: Schema.String
@@ -604,6 +610,22 @@ export class CallbackEvent extends Schema.Class<CallbackEvent>('CallbackEvent')(
 			'CloudEvent webhook payload sent by Prodigi on order stage changes.'
 	}
 ) {}
+
+/**
+ * Decode an unknown value as a `CallbackEvent`.
+ *
+ * Useful at webhook handler boundaries to validate incoming payloads.
+ *
+ * @since 0.1.0
+ */
+export const decodeCallbackEvent = Schema.decodeUnknownEffect(CallbackEvent);
+
+/**
+ * Type guard for `CallbackEvent`.
+ *
+ * @since 0.1.0
+ */
+export const isCallbackEvent = Schema.is(CallbackEvent);
 
 // ---------------------------------------------------------------------------
 // Actions

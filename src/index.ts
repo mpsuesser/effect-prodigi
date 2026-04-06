@@ -41,8 +41,10 @@ export {
 	ChargeType,
 	Cost,
 	CostSummary,
+	decodeCallbackEvent,
 	DetailStage,
 	FulfillmentLocation,
+	isCallbackEvent,
 	Issue,
 	Item,
 	ItemStatus,
@@ -103,6 +105,7 @@ export {
 export {
 	ActionsResponse,
 	CancelOrderResponse,
+	ErrorData,
 	ErrorResponse,
 	OrderResponse,
 	OrdersResponse,
@@ -111,5 +114,6 @@ export {
 	SpineResponse,
 	UpdateMetadataResponse,
 	UpdateRecipientResponse,
-	UpdateShippingResponse
+	UpdateShippingResponse,
+	ValidationDetail
 } from './Responses.ts';

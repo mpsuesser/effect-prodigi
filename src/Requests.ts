@@ -102,7 +102,13 @@ export class AddressInput extends Schema.Class<AddressInput>('AddressInput')(
 	{ description: 'Postal address for the order recipient.' }
 ) {}
 
-/** Recipient for order creation. */
+/**
+ * Recipient for order creation (request shape).
+ *
+ * Optional fields use `optionalKey` since absent keys are omitted from
+ * the JSON payload. For the response-side counterpart where nullable
+ * fields decode to `Option`, see `Recipient` in `Schemas.ts`.
+ */
 export class RecipientInput extends Schema.Class<RecipientInput>(
 	'RecipientInput'
 )(

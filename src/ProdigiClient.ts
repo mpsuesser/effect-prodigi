@@ -7,9 +7,10 @@
  *
  * @since 0.1.0
  */
-import { Effect, Layer, Redacted, ServiceMap } from 'effect';
+import { Effect, Layer, pipe, Redacted, Result, ServiceMap } from 'effect';
 import * as Arr from 'effect/Array';
 import * as Option from 'effect/Option';
+import * as R from 'effect/Record';
 import * as Schema from 'effect/Schema';
 import {
 	HttpClient,
@@ -79,17 +80,10 @@ const OUTCOME_REASON_MAP: Readonly<Record<string, ProdigiErrorReason>> = {
 const outcomeToReason = (outcome: string): Option.Option<ProdigiErrorReason> =>
 	Option.fromNullishOr(OUTCOME_REASON_MAP[outcome.toLowerCase()]);
 
-/** Set of lower-cased outcomes that represent a successful API call. */
-const SUCCESS_OUTCOMES: ReadonlySet<string> = new Set([
-	'ok',
-	'created',
-	'updated',
-	'cancelled',
-	'onhold'
-]);
-
-const isSuccessOutcome = (outcome: string): boolean =>
-	SUCCESS_OUTCOMES.has(outcome.toLowerCase());
+/** Lower-cased outcomes that represent a successful API call. */
+const isSuccessOutcome = Schema.is(
+	Schema.Literals(['ok', 'created', 'updated', 'cancelled', 'onhold'])
+);
 
 /** HTTP status code → error reason mapping. */
 const STATUS_REASON_MAP: Readonly<Record<number, ProdigiErrorReason>> = {
@@ -116,25 +110,39 @@ const buildOrdersUrlParams = (
 	params: GetOrdersParams | undefined
 ): Record<string, string> | undefined => {
 	if (params === undefined) return undefined;
-	const entries: Array<readonly [string, string]> = [];
-	if (params.top !== undefined) entries.push(['top', String(params.top)]);
-	if (params.skip !== undefined) entries.push(['skip', String(params.skip)]);
-	if (params.createdFrom !== undefined)
-		entries.push(['createdFrom', params.createdFrom]);
-	if (params.createdTo !== undefined)
-		entries.push(['createdTo', params.createdTo]);
-	if (params.status !== undefined) entries.push(['status', params.status]);
-	if (params.orderIds !== undefined)
-		entries.push(['orderIds', Arr.join(params.orderIds, ',')]);
-	if (params.merchantReferences !== undefined)
-		entries.push([
-			'merchantReferences',
-			Arr.join(params.merchantReferences, ',')
-		]);
-	return Arr.isArrayNonEmpty(entries)
-		? Object.fromEntries(entries)
-		: undefined;
+	const entries = pipe(
+		[
+			serializeParam('top', params.top),
+			serializeParam('skip', params.skip),
+			serializeParam('createdFrom', params.createdFrom),
+			serializeParam('createdTo', params.createdTo),
+			serializeParam('status', params.status),
+			serializeArrayParam('orderIds', params.orderIds),
+			serializeArrayParam('merchantReferences', params.merchantReferences)
+		],
+		Arr.filterMap(
+			(entry): Result.Result<readonly [string, string], void> => entry
+		)
+	);
+	return Arr.isArrayNonEmpty(entries) ? R.fromEntries(entries) : undefined;
 };
+
+const absent: Result.Result<readonly [string, string], void> =
+	Result.fail(undefined);
+
+/** Serialise a scalar param to a key-value tuple, or skip if absent. */
+const serializeParam = (
+	key: string,
+	value: string | number | undefined
+): Result.Result<readonly [string, string], void> =>
+	value !== undefined ? Result.succeed([key, String(value)]) : absent;
+
+/** Serialise an array param as comma-separated, or skip if absent. */
+const serializeArrayParam = (
+	key: string,
+	value: ReadonlyArray<string> | undefined
+): Result.Result<readonly [string, string], void> =>
+	value !== undefined ? Result.succeed([key, Arr.join(value, ',')]) : absent;
 
 // ---------------------------------------------------------------------------
 // Service
@@ -249,30 +257,36 @@ export namespace ProdigiClient {
 			// Error wrapping
 			// ---------------------------------------------------------------
 
-			const wrapError = (cause: unknown): ProdigiError =>
-				cause instanceof ProdigiError
-					? cause
-					: new ProdigiError({
-							reason: 'HttpError',
-							message: String(cause),
-							cause
-						});
+			/**
+			 * Idempotent error mapper — wraps unknown causes in
+			 * `ProdigiError` without double-wrapping.
+			 */
+			const mapToProdigiError = <A, E, Req>(
+				self: Effect.Effect<A, E, Req>
+			): Effect.Effect<A, ProdigiError, Req> =>
+				self.pipe(
+					Effect.mapError((cause) =>
+						cause instanceof ProdigiError
+							? cause
+							: new ProdigiError({
+									reason: 'HttpError',
+									message: String(cause),
+									cause
+								})
+					)
+				);
 
 			// ---------------------------------------------------------------
 			// Outcome validation
 			// ---------------------------------------------------------------
 
-			/**
-			 * Check the outcome field of a decoded response body. If the
-			 * outcome maps to a known error reason, fail with `ProdigiError`.
-			 */
-			const validateOutcome = <T extends WithOutcome>(
-				body: T
-			): Effect.Effect<T, ProdigiError> => {
-				if (isSuccessOutcome(body.outcome)) {
-					return Effect.succeed(body);
+			const validateOutcome = Effect.fnUntraced(function* <
+				T extends WithOutcome
+			>(body: T) {
+				if (isSuccessOutcome(body.outcome.toLowerCase())) {
+					return body;
 				}
-				return Option.match(outcomeToReason(body.outcome), {
+				return yield* Option.match(outcomeToReason(body.outcome), {
 					onNone: () => Effect.succeed(body),
 					onSome: (reason) =>
 						Effect.fail(
@@ -282,128 +296,89 @@ export namespace ProdigiClient {
 							})
 						)
 				});
-			};
+			});
 
 			// ---------------------------------------------------------------
 			// Response handling
 			// ---------------------------------------------------------------
 
-			/**
-			 * Decode and validate an HTTP response. Non-2xx responses are
-			 * decoded as `ErrorResponse` and mapped to `ProdigiError`.
-			 * 2xx responses are decoded with the provided schema and then
-			 * validated for failure outcomes.
-			 */
-			const handleResponse = <
+			const handleResponse = Effect.fnUntraced(function* <
 				S extends Schema.Top & { readonly Type: WithOutcome }
-			>(
-				schema: S,
-				res: HttpClientResponse.HttpClientResponse
-			): Effect.Effect<
-				S['Type'],
-				ProdigiError,
-				S['DecodingServices']
-			> => {
+			>(schema: S, res: HttpClientResponse.HttpClientResponse) {
 				if (res.status >= 400) {
-					return HttpClientResponse.schemaBodyJson(ErrorResponse)(
-						res
-					).pipe(
-						Effect.flatMap((errBody) =>
-							Effect.fail(
-								new ProdigiError({
-									reason: mapStatusToReason(
-										errBody.statusCode
-									),
-									message: errBody.statusText,
-									statusCode: errBody.statusCode
-								})
-							)
-						),
-						Effect.mapError(wrapError)
-					);
+					const errBody =
+						yield* HttpClientResponse.schemaBodyJson(ErrorResponse)(
+							res
+						).pipe(mapToProdigiError);
+					yield* Effect.logDebug('Prodigi API error response', {
+						statusCode: errBody.statusCode,
+						statusText: errBody.statusText
+					});
+					return yield* new ProdigiError({
+						reason: mapStatusToReason(errBody.statusCode),
+						message: errBody.statusText,
+						statusCode: errBody.statusCode
+					});
 				}
-				return HttpClientResponse.schemaBodyJson(schema)(res).pipe(
-					Effect.flatMap(validateOutcome),
-					Effect.mapError(wrapError)
-				);
-			};
+				const body =
+					yield* HttpClientResponse.schemaBodyJson(schema)(res).pipe(
+						mapToProdigiError
+					);
+				return yield* validateOutcome(body);
+			});
 
 			// ---------------------------------------------------------------
 			// Request helpers
 			// ---------------------------------------------------------------
 
-			const doGet = <
+			const doGet = Effect.fnUntraced(function* <
 				S extends Schema.Top & { readonly Type: WithOutcome }
-			>(
-				path: string,
-				schema: S,
-				urlParams?: Record<string, string>
-			): Effect.Effect<S['Type'], ProdigiError, S['DecodingServices']> =>
-				client.get(path, urlParams ? { urlParams } : undefined).pipe(
-					Effect.flatMap((res) => handleResponse(schema, res)),
-					Effect.mapError(wrapError),
-					Effect.withSpan(`ProdigiClient.GET ${path}`)
-				);
+			>(path: string, schema: S, urlParams?: Record<string, string>) {
+				const res = yield* client
+					.get(path, urlParams ? { urlParams } : undefined)
+					.pipe(mapToProdigiError);
+				return yield* handleResponse(schema, res);
+			});
 
-			const doPost = <
+			const doPost = Effect.fnUntraced(function* <
 				S extends Schema.Top & { readonly Type: WithOutcome }
-			>(
-				path: string,
-				schema: S,
-				body?: unknown
-			): Effect.Effect<
-				S['Type'],
-				ProdigiError,
-				S['DecodingServices']
-			> => {
+			>(path: string, schema: S, body?: unknown) {
 				const base = HttpClientRequest.post(path);
 				const withBody =
 					body !== undefined
 						? base.pipe(HttpClientRequest.bodyJsonUnsafe(body))
 						: base;
-				return client.execute(withBody).pipe(
-					Effect.flatMap((res) => handleResponse(schema, res)),
-					Effect.mapError(wrapError),
-					Effect.withSpan(`ProdigiClient.POST ${path}`)
-				);
-			};
+				const res = yield* client
+					.execute(withBody)
+					.pipe(mapToProdigiError);
+				return yield* handleResponse(schema, res);
+			});
 
 			/**
 			 * POST variant for endpoints whose response does not have an
 			 * `outcome` envelope (e.g. /products/spine).
 			 */
-			const doPostRaw = <S extends Schema.Top>(
-				path: string,
-				schema: S,
-				body: unknown
-			): Effect.Effect<
-				S['Type'],
-				ProdigiError,
-				S['DecodingServices']
-			> => {
+			const doPostRaw = Effect.fnUntraced(function* <
+				S extends Schema.Top
+			>(path: string, schema: S, body: unknown) {
 				const base = HttpClientRequest.post(path);
 				const withBody = base.pipe(
 					HttpClientRequest.bodyJsonUnsafe(body)
 				);
-				return client.execute(withBody).pipe(
-					Effect.flatMap((res) => {
-						if (res.status >= 400) {
-							return Effect.fail(
-								new ProdigiError({
-									reason: mapStatusToReason(res.status),
-									message: `HTTP ${res.status}`,
-									statusCode: res.status
-								})
-							);
-						}
-						return HttpClientResponse.schemaBodyJson(schema)(
-							res
-						).pipe(Effect.mapError(wrapError));
-					}),
-					Effect.mapError(wrapError),
-					Effect.withSpan(`ProdigiClient.POST ${path}`)
-				);
-			};
+				const res = yield* client
+					.execute(withBody)
+					.pipe(mapToProdigiError);
+				if (res.status >= 400) {
+					return yield* new ProdigiError({
+						reason: mapStatusToReason(res.status),
+						message: `HTTP ${res.status}`,
+						statusCode: res.status
+					});
+				}
+				return yield* HttpClientResponse.schemaBodyJson(schema)(
+					res
+				).pipe(mapToProdigiError);
+			});
 
 			// ---------------------------------------------------------------
 			// Endpoint implementations
@@ -411,13 +386,18 @@ export namespace ProdigiClient {
 
 			const createOrder = Effect.fn('ProdigiClient.createOrder')(
 				function* (input: CreateOrderInput) {
-					return yield* doPost('/Orders', OrderResponse, input);
+					yield* Effect.annotateCurrentSpan(
+						'prodigi.idempotencyKey',
+						input.idempotencyKey ?? 'none'
+					);
+					return yield* doPost('/orders', OrderResponse, input);
 				}
 			);
 
 			const getOrder = Effect.fn('ProdigiClient.getOrder')(function* (
 				orderId: string
 			) {
+				yield* Effect.annotateCurrentSpan('prodigi.orderId', orderId);
 				return yield* doGet(`/orders/${orderId}`, OrderResponse);
 			});
 
@@ -434,14 +414,19 @@ export namespace ProdigiClient {
 			const getActions = Effect.fn('ProdigiClient.getActions')(function* (
 				orderId: string
 			) {
+				yield* Effect.annotateCurrentSpan('prodigi.orderId', orderId);
 				return yield* doGet(
-					`/Orders/${orderId}/actions`,
+					`/orders/${orderId}/actions`,
 					ActionsResponse
 				);
 			});
 
 			const cancelOrder = Effect.fn('ProdigiClient.cancelOrder')(
 				function* (orderId: string) {
+					yield* Effect.annotateCurrentSpan(
+						'prodigi.orderId',
+						orderId
+					);
 					return yield* doPost(
 						`/orders/${orderId}/actions/cancel`,
 						CancelOrderResponse
@@ -452,8 +437,9 @@ export namespace ProdigiClient {
 			const updateShippingMethod = Effect.fn(
 				'ProdigiClient.updateShippingMethod'
 			)(function* (orderId: string, input: UpdateShippingMethodInput) {
+				yield* Effect.annotateCurrentSpan('prodigi.orderId', orderId);
 				return yield* doPost(
-					`/Orders/${orderId}/actions/updateShippingMethod`,
+					`/orders/${orderId}/actions/updateShippingMethod`,
 					UpdateShippingResponse,
 					input
 				);
@@ -461,8 +447,12 @@ export namespace ProdigiClient {
 
 			const updateRecipient = Effect.fn('ProdigiClient.updateRecipient')(
 				function* (orderId: string, input: UpdateRecipientInput) {
+					yield* Effect.annotateCurrentSpan(
+						'prodigi.orderId',
+						orderId
+					);
 					return yield* doPost(
-						`/Orders/${orderId}/actions/updateRecipient`,
+						`/orders/${orderId}/actions/updateRecipient`,
 						UpdateRecipientResponse,
 						input
 					);
@@ -471,8 +461,12 @@ export namespace ProdigiClient {
 
 			const updateMetadata = Effect.fn('ProdigiClient.updateMetadata')(
 				function* (orderId: string, input: UpdateMetadataInput) {
+					yield* Effect.annotateCurrentSpan(
+						'prodigi.orderId',
+						orderId
+					);
 					return yield* doPost(
-						`/Orders/${orderId}/actions/updateMetadata`,
+						`/orders/${orderId}/actions/updateMetadata`,
 						UpdateMetadataResponse,
 						input
 					);
@@ -488,12 +482,14 @@ export namespace ProdigiClient {
 			const getProduct = Effect.fn('ProdigiClient.getProduct')(function* (
 				sku: string
 			) {
+				yield* Effect.annotateCurrentSpan('prodigi.sku', sku);
 				return yield* doGet(`/products/${sku}`, ProductResponse);
 			});
 
 			const getSpine = Effect.fn('ProdigiClient.getSpine')(function* (
 				input: GetSpineInput
 			) {
+				yield* Effect.annotateCurrentSpan('prodigi.sku', input.sku);
 				return yield* doPostRaw(
 					'/products/spine',
 					SpineResponse,
@@ -521,7 +517,12 @@ export namespace ProdigiClient {
 	 * Fully-wired default layer that reads config from the environment
 	 * and uses the platform `FetchHttpClient`.
 	 *
-	 * Requires `FetchHttpClient.layer` (or equivalent) to be provided.
+	 * **Requirements:** An `HttpClient` must still be provided by the
+	 * caller (e.g. `FetchHttpClient.layer` or `BunHttpClient.layer`).
+	 *
+	 * **Security:** The API key is attached as a request header via
+	 * `Redacted`. Ensure error reporters / loggers do not serialise
+	 * raw `HttpClientRequest` headers.
 	 */
 	export const defaultLayer = Layer.unwrap(
 		Effect.sync(() => layer.pipe(Layer.provide(ProdigiConfig.layer)))
