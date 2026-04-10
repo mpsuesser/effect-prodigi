@@ -7,7 +7,7 @@
  *
  * @since 0.1.0
  */
-import { Config, Effect, Layer, Match, Redacted, ServiceMap } from 'effect';
+import { Config, Context, Effect, Layer, Match, Redacted } from 'effect';
 import * as Schema from 'effect/Schema';
 
 // ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ export namespace ProdigiConfig {
 	}
 
 	/** Configuration service for the Prodigi API client. */
-	export class Service extends ServiceMap.Service<Service, Interface>()(
+	export class Service extends Context.Service<Service, Interface>()(
 		'@effect-prodigi/ProdigiConfig'
 	) {}
 

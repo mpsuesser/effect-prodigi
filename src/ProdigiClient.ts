@@ -7,7 +7,7 @@
  *
  * @since 0.1.0
  */
-import { Effect, Layer, pipe, Redacted, Result, ServiceMap } from 'effect';
+import { Context, Effect, Layer, pipe, Redacted, Result } from 'effect';
 import * as Arr from 'effect/Array';
 import * as Option from 'effect/Option';
 import * as R from 'effect/Record';
@@ -219,7 +219,7 @@ export namespace ProdigiClient {
 	}
 
 	/** Prodigi API client service tag. */
-	export class Service extends ServiceMap.Service<Service, Interface>()(
+	export class Service extends Context.Service<Service, Interface>()(
 		'@effect-prodigi/ProdigiClient'
 	) {}
 

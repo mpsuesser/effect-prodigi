@@ -19,7 +19,7 @@ CI gate order: `bun run check` then `bun run test` then `bun run typecheck`. All
 - **Bun 1.3.11** as runtime and package manager (`bun.lock`, not `package-lock.json`)
 - **vite-plus** (`vp`) is the unified build/lint/format tool. There are no standalone eslint, prettier, or biome configs — everything is in `vite.config.ts`
 - **tsgo** for typechecking (native TS compiler), not `tsc`
-- **Effect v4 beta** (`4.0.0-beta.43`) — do not use v3 patterns. Load skills or read `.references/effect-v4/` when unsure about APIs
+- **Effect v4 beta** (`4.0.0-beta.46`) — do not use v3 patterns. Load skills or read `.references/effect-v4/` when unsure about APIs
 
 ## Formatting
 
