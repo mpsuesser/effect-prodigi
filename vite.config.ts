@@ -40,6 +40,17 @@ export default defineConfig({
 		ignorePatterns: ['.references'],
 		plugins: ['typescript', 'import', 'unicorn', 'vitest'],
 		rules: {
+			'vitest/no-standalone-expect': [
+				'error',
+				{
+					additionalTestBlockFunctions: [
+						'it.effect',
+						'it.live',
+						'it.scoped',
+						'it.scopedLive'
+					]
+				}
+			],
 			'@typescript-eslint/no-explicit-any': 'error',
 			'@typescript-eslint/no-non-null-assertion': 'error',
 			'@typescript-eslint/no-extra-non-null-assertion': 'error',

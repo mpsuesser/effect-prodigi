@@ -22,11 +22,11 @@ Zero runtime dependencies — only `effect` as a peer.
 ## Install
 
 ```sh
-npm install effect-prodigi effect@4.0.0-beta.43
+npm install effect-prodigi effect@4.0.0-rc.112
 ```
 
 ```sh
-bun add effect-prodigi effect@4.0.0-beta.43
+bun add effect-prodigi effect@4.0.0-rc.112
 ```
 
 ## Configuration

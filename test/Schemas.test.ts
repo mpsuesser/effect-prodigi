@@ -5,7 +5,14 @@ import * as DateTime from 'effect/DateTime';
 import * as Option from 'effect/Option';
 import * as Schema from 'effect/Schema';
 
-import { Address, Cost, Order, Recipient } from 'effect-prodigi';
+import {
+	Address,
+	Branding,
+	Charge,
+	Cost,
+	Order,
+	Recipient
+} from 'effect-prodigi';
 import {
 	ActionsResponse,
 	ErrorResponse,
@@ -19,6 +26,42 @@ import {
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
+
+describe('Observed provider response variants', () => {
+	it('decodes empty and partial branding into explicit absence', () => {
+		const empty = Schema.decodeUnknownSync(Branding)({});
+		expect(Option.isNone(empty.postcard)).toBe(true);
+		expect(Option.isNone(empty.sticker_interior_rectangle)).toBe(true);
+		const partial = Schema.decodeUnknownSync(Branding)({ postcard: null });
+		expect(Option.isNone(partial.postcard)).toBe(true);
+	});
+	it('decodes charge types on invoice line items and retains invoice tax', () => {
+		const charge = Schema.decodeUnknownSync(Charge)({
+			id: 'chg_fixture',
+			prodigiInvoiceNumber: null,
+			totalCost: { amount: '62.80', currency: 'USD' },
+			totalTax: { amount: '0.00', currency: 'USD' },
+			items: [
+				{
+					id: 'chi_fixture',
+					itemId: null,
+					shipmentId: 'shp_fixture',
+					chargeType: 'Shipping',
+					cost: { amount: '24.80', currency: 'USD' }
+				}
+			]
+		});
+		expect(Option.isNone(charge.chargeType)).toBe(true);
+		expect(Option.map(charge.totalTax, (cost) => cost.amount)).toEqual(
+			Option.some('0.00')
+		);
+		expect(
+			Arr.head(charge.items).pipe(
+				Option.flatMap((item) => item.chargeType)
+			)
+		).toEqual(Option.some('Shipping'));
+	});
+});
 
 const minimalAddress = {
 	line1: '14 Tottenham Court Road',

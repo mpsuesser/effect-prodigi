@@ -81,6 +81,11 @@ const outcomeToReason = (outcome: string): Option.Option<ProdigiErrorReason> =>
 	Option.fromNullishOr(OUTCOME_REASON_MAP[outcome.toLowerCase()]);
 
 /** Lower-cased outcomes that represent a successful API call. */
+class Outcome extends Schema.Class<Outcome>('Outcome')({
+	outcome: Schema.String
+}) {}
+
+/** Lower-cased outcomes that represent a successful API call. */
 const isSuccessOutcome = Schema.is(
 	Schema.Literals(['ok', 'created', 'updated', 'cancelled', 'onhold'])
 );
@@ -282,8 +287,12 @@ export namespace ProdigiClient {
 
 			const validateOutcome = Effect.fnUntraced(function* <
 				T extends WithOutcome
-			>(body: T) {
-				if (isSuccessOutcome(body.outcome.toLowerCase())) {
+			>(body: T, allowQuoteIssues = false) {
+				if (
+					isSuccessOutcome(body.outcome.toLowerCase()) ||
+					(allowQuoteIssues &&
+						body.outcome.toLowerCase() === 'createdwithissues')
+				) {
 					return body;
 				}
 				return yield* Option.match(outcomeToReason(body.outcome), {
@@ -304,7 +313,11 @@ export namespace ProdigiClient {
 
 			const handleResponse = Effect.fnUntraced(function* <
 				S extends Schema.Top & { readonly Type: WithOutcome }
-			>(schema: S, res: HttpClientResponse.HttpClientResponse) {
+			>(
+				schema: S,
+				res: HttpClientResponse.HttpClientResponse,
+				allowQuoteIssues = false
+			) {
 				if (res.status >= 400) {
 					const errBody =
 						yield* HttpClientResponse.schemaBodyJson(ErrorResponse)(
@@ -320,11 +333,17 @@ export namespace ProdigiClient {
 						statusCode: errBody.statusCode
 					});
 				}
-				const body =
-					yield* HttpClientResponse.schemaBodyJson(schema)(res).pipe(
+				const raw = yield* HttpClientResponse.schemaBodyJson(
+					Schema.Unknown
+				)(res).pipe(mapToProdigiError);
+				const outcome =
+					yield* Schema.decodeUnknownEffect(Outcome)(raw).pipe(
 						mapToProdigiError
 					);
-				return yield* validateOutcome(body);
+				yield* validateOutcome(outcome, allowQuoteIssues);
+				return yield* Schema.decodeUnknownEffect(schema)(raw).pipe(
+					mapToProdigiError
+				);
 			});
 
 			// ---------------------------------------------------------------
@@ -342,7 +361,12 @@ export namespace ProdigiClient {
 
 			const doPost = Effect.fnUntraced(function* <
 				S extends Schema.Top & { readonly Type: WithOutcome }
-			>(path: string, schema: S, body?: unknown) {
+			>(
+				path: string,
+				schema: S,
+				body?: unknown,
+				allowQuoteIssues = false
+			) {
 				const base = HttpClientRequest.post(path);
 				const withBody =
 					body !== undefined
@@ -351,7 +375,7 @@ export namespace ProdigiClient {
 				const res = yield* client
 					.execute(withBody)
 					.pipe(mapToProdigiError);
-				return yield* handleResponse(schema, res);
+				return yield* handleResponse(schema, res, allowQuoteIssues);
 			});
 
 			/**
@@ -475,7 +499,7 @@ export namespace ProdigiClient {
 
 			const createQuote = Effect.fn('ProdigiClient.createQuote')(
 				function* (input: CreateQuoteInput) {
-					return yield* doPost('/quotes', QuoteResponse, input);
+					return yield* doPost('/quotes', QuoteResponse, input, true);
 				}
 			);
 

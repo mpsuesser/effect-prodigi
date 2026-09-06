@@ -14,6 +14,7 @@ import {
 	Order,
 	Product,
 	Quote,
+	QuoteIssue,
 	ShipmentUpdateResult,
 	SpineInfo
 } from './Schemas.ts';
@@ -157,6 +158,7 @@ export class QuoteResponse extends Schema.Class<QuoteResponse>('QuoteResponse')(
 	{
 		outcome: Schema.String,
 		quotes: Schema.Array(Quote),
+		issues: Schema.optionalKey(Schema.Array(QuoteIssue)),
 		traceParent: Schema.optionalKey(Schema.String)
 	},
 	{

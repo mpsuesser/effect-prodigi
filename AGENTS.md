@@ -16,10 +16,10 @@ CI gate order: `bun run check` then `bun run test` then `bun run typecheck`. All
 
 ## Toolchain
 
-- **Bun 1.3.11** as runtime and package manager (`bun.lock`, not `package-lock.json`)
+- **Bun 1.4.0** as runtime and package manager (`bun.lock`, not `package-lock.json`)
 - **vite-plus** (`vp`) is the unified build/lint/format tool. There are no standalone eslint, prettier, or biome configs — everything is in `vite.config.ts`
 - **tsgo** for typechecking (native TS compiler), not `tsc`
-- **Effect v4 beta** (`4.0.0-beta.46`) — do not use v3 patterns. Load skills or read `.references/effect-v4/` when unsure about APIs
+- **Effect v4 RC** (`4.0.0-rc.112`) — do not use v3 patterns. Read the installed `node_modules/effect` source when unsure about APIs. Errors use `Schema.TaggedError` (renamed from `TaggedErrorClass`) and `Schema.Defect()`.
 
 ## Formatting
 
@@ -56,4 +56,4 @@ test/
 
 Maps the Prodigi print-on-demand REST API v4.0 (`/v4.0/` prefix). The API uses `X-API-Key` header auth and returns JSON with an `outcome` field on most responses.
 
-The client validates `outcome` against known success values (`ok`, `created`, `updated`, `cancelled`, `onhold`) and maps error outcomes to typed `ProdigiError` reasons. The `/products/spine` endpoint is a special case — it returns `{ success, message, spineInfo }` without the `outcome` envelope.
+The client validates `outcome` against known success values (`ok`, `created`, `updated`, `cancelled`, `onhold`) and maps error outcomes to typed `ProdigiError` reasons. Quotes also accept `CreatedWithIssues` and preserve top-level issues, including Prodigi's US sales-tax warning; callers decide whether those warnings permit using the quote. Order creation retains its typed failure for that outcome. The `/products/spine` endpoint is a special case — it returns `{ success, message, spineInfo }` without the `outcome` envelope.

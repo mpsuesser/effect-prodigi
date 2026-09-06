@@ -7,6 +7,7 @@
  *
  * @since 0.1.0
  */
+import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
 
 // ---------------------------------------------------------------------------
@@ -190,14 +191,30 @@ export class BrandingAsset extends Schema.Class<BrandingAsset>('BrandingAsset')(
 /** Per-order branding components included in shipment packaging. */
 export class Branding extends Schema.Class<Branding>('Branding')(
 	{
-		postcard: Schema.OptionFromNullOr(BrandingAsset),
-		flyer: Schema.OptionFromNullOr(BrandingAsset),
-		packing_slip_bw: Schema.OptionFromNullOr(BrandingAsset),
-		packing_slip_color: Schema.OptionFromNullOr(BrandingAsset),
-		sticker_exterior_round: Schema.OptionFromNullOr(BrandingAsset),
-		sticker_exterior_rectangle: Schema.OptionFromNullOr(BrandingAsset),
-		sticker_interior_round: Schema.OptionFromNullOr(BrandingAsset),
-		sticker_interior_rectangle: Schema.OptionFromNullOr(BrandingAsset)
+		postcard: Schema.OptionFromNullOr(BrandingAsset).pipe(
+			Schema.withDecodingDefaultKey(Effect.succeed(null))
+		),
+		flyer: Schema.OptionFromNullOr(BrandingAsset).pipe(
+			Schema.withDecodingDefaultKey(Effect.succeed(null))
+		),
+		packing_slip_bw: Schema.OptionFromNullOr(BrandingAsset).pipe(
+			Schema.withDecodingDefaultKey(Effect.succeed(null))
+		),
+		packing_slip_color: Schema.OptionFromNullOr(BrandingAsset).pipe(
+			Schema.withDecodingDefaultKey(Effect.succeed(null))
+		),
+		sticker_exterior_round: Schema.OptionFromNullOr(BrandingAsset).pipe(
+			Schema.withDecodingDefaultKey(Effect.succeed(null))
+		),
+		sticker_exterior_rectangle: Schema.OptionFromNullOr(BrandingAsset).pipe(
+			Schema.withDecodingDefaultKey(Effect.succeed(null))
+		),
+		sticker_interior_round: Schema.OptionFromNullOr(BrandingAsset).pipe(
+			Schema.withDecodingDefaultKey(Effect.succeed(null))
+		),
+		sticker_interior_rectangle: Schema.OptionFromNullOr(BrandingAsset).pipe(
+			Schema.withDecodingDefaultKey(Effect.succeed(null))
+		)
 	},
 	{
 		description:
@@ -331,6 +348,9 @@ export class ChargeItem extends Schema.Class<ChargeItem>('ChargeItem')(
 		id: Schema.String,
 		shipmentId: Schema.OptionFromNullOr(Schema.String),
 		itemId: Schema.OptionFromNullOr(Schema.String),
+		chargeType: Schema.OptionFromNullOr(ChargeType).pipe(
+			Schema.withDecodingDefaultKey(Effect.succeed(null))
+		),
 		cost: Cost
 	},
 	{ description: 'Individual charge line with optional shipment/item link.' }
@@ -340,9 +360,14 @@ export class ChargeItem extends Schema.Class<ChargeItem>('ChargeItem')(
 export class Charge extends Schema.Class<Charge>('Charge')(
 	{
 		id: Schema.String,
-		chargeType: ChargeType,
+		chargeType: Schema.OptionFromNullOr(ChargeType).pipe(
+			Schema.withDecodingDefaultKey(Effect.succeed(null))
+		),
 		prodigiInvoiceNumber: Schema.OptionFromNullOr(Schema.String),
 		totalCost: Cost,
+		totalTax: Schema.OptionFromNullOr(Cost).pipe(
+			Schema.withDecodingDefaultKey(Effect.succeed(null))
+		),
 		items: Schema.Array(ChargeItem)
 	},
 	{ description: 'Billing charge record with type, total, and line items.' }

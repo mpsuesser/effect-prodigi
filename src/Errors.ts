@@ -48,13 +48,13 @@ export type ProdigiErrorReason = typeof ProdigiErrorReason.Type;
  * Every public method on the `ProdigiClient` service fails with this error.
  * The `reason` field lets callers handle specific failure modes precisely.
  */
-export class ProdigiError extends Schema.TaggedErrorClass<ProdigiError>()(
+export class ProdigiError extends Schema.TaggedError<ProdigiError>()(
 	'ProdigiError',
 	{
 		reason: ProdigiErrorReason,
 		message: Schema.String,
 		statusCode: Schema.optionalKey(Schema.Number),
-		cause: Schema.optionalKey(Schema.Defect)
+		cause: Schema.optionalKey(Schema.Defect())
 	},
 	{
 		description:

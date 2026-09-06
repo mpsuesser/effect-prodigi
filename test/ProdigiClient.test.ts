@@ -106,7 +106,7 @@ interface MockRoute {
 	readonly body: unknown;
 }
 
-const encodeJson = Schema.encodeSync(Schema.UnknownFromJsonString);
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 /** Build a web `Response` with a JSON body. */
 const jsonResponse = (body: unknown, status: number): Response =>
@@ -309,6 +309,54 @@ describe('ProdigiClient', () => {
 	// -- createOrder --------------------------------------------------------
 
 	describe('createOrder', () => {
+		it.effect(
+			'classifies minimal AlreadyExists responses before decoding a full order',
+			() =>
+				Effect.gen(function* () {
+					const client = yield* ProdigiClient.Service;
+					const error = yield* Effect.flip(
+						client.createOrder({
+							idempotencyKey: 'retry-key',
+							shippingMethod: 'Standard',
+							recipient: {
+								name: 'Test',
+								address: {
+									line1: '1 Test St',
+									postalOrZipCode: '12345',
+									countryCode: 'US',
+									townOrCity: 'Testville'
+								}
+							},
+							items: [
+								{
+									sku: 'GLOBAL-PHO-4x6',
+									copies: 1,
+									sizing: 'fillPrintArea',
+									assets: [
+										{
+											printArea: 'default',
+											url: 'https://example.com/x.jpg'
+										}
+									]
+								}
+							]
+						})
+					);
+					expect(error.reason).toBe('AlreadyExists');
+				}).pipe(
+					Effect.provide(
+						makeTestLayer({
+							method: 'POST',
+							pathIncludes: '/orders',
+							status: 200,
+							body: {
+								outcome: 'AlreadyExists',
+								order: { id: 'ord_abc123' }
+							}
+						})
+					)
+				)
+		);
 		it.effect('returns OrderResponse on Created outcome', () =>
 			Effect.gen(function* () {
 				const client = yield* ProdigiClient.Service;
@@ -484,6 +532,67 @@ describe('ProdigiClient', () => {
 	// -- createQuote -------------------------------------------------------
 
 	describe('createQuote', () => {
+		it.effect(
+			'preserves usable quotes and top-level sales-tax warnings',
+			() =>
+				Effect.gen(function* () {
+					const client = yield* ProdigiClient.Service;
+					const response = yield* client.createQuote({
+						destinationCountryCode: 'US',
+						items: [
+							{
+								sku: 'GLOBAL-CFP-11X14',
+								copies: 1,
+								assets: [{ printArea: 'default' }]
+							}
+						]
+					});
+					expect(response.outcome).toBe('CreatedWithIssues');
+					expect(response.quotes[0]?.costSummary.items.amount).toBe(
+						'38.00'
+					);
+					expect(response.issues?.[0]?.errorCode).toBe(
+						'destinationCountryCode.UsSalesTaxWarning'
+					);
+				}).pipe(
+					Effect.provide(
+						makeTestLayer({
+							method: 'POST',
+							pathIncludes: '/quotes',
+							status: 200,
+							body: {
+								outcome: 'CreatedWithIssues',
+								issues: [
+									{
+										objectId: null,
+										errorCode:
+											'destinationCountryCode.UsSalesTaxWarning',
+										description:
+											'Quote does not include sales tax, which may apply'
+									}
+								],
+								quotes: [
+									{
+										shipmentMethod: 'Standard',
+										costSummary: {
+											items: {
+												amount: '38.00',
+												currency: 'USD'
+											},
+											shipping: {
+												amount: '24.80',
+												currency: 'USD'
+											}
+										},
+										shipments: [],
+										items: []
+									}
+								]
+							}
+						})
+					)
+				)
+		);
 		it.effect('returns QuoteResponse', () =>
 			Effect.gen(function* () {
 				const client = yield* ProdigiClient.Service;
